@@ -80,21 +80,21 @@ class _PricingInfoState extends State<PricingInfo> {
                   });
 
                   FilePickerResult? result =
-                      await FilePicker.platform.pickFiles();
+                      await FilePicker.pickFiles();
 
                   if (result != null) {
-                    File file = File(result.files.single.path!);
+                    File newFile = File(result.files.single.path!);
                     setState(() {
-                      file = file;
+                      file = newFile;
                     });
-                    csvConverter = CsvConverter(filePath: file);
+                    csvConverter = CsvConverter(filePath: newFile);
                     csvConverter.convert().then((value) async {
                       await _priceDb.addAll(
                           priceModelList: value as List<PriceModel>,
                           type: milkType);
 
+                      if (!context.mounted) return;
 
-                      
                       showSuccessSnackBar(
                           context: context, message: "Successfully Saved");
 
