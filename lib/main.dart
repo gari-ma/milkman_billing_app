@@ -13,11 +13,11 @@ import 'package:printer_module/ui/splash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  setupHive();
+  await setupHive();
   runApp(const BaseApp());
 }
 
-void setupHive() async {
+Future<void> setupHive() async {
   /// sets up Hive as the project database
   ///
   /// https://pub.dev/packages/hive

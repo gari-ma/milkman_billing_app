@@ -9,12 +9,11 @@ import 'package:printer_module/db/sellers_db.dart';
 import 'package:printer_module/db/setting_db.dart';
 import 'package:printer_module/extension/snackbar_xn.dart';
 import 'package:printer_module/model/seller_model.dart';
-import 'package:printer_module/res/colors.dart';
-import 'package:printer_module/res/strings.dart';
+import 'package:printer_module/res/gradient_app_bar.dart';
+import 'package:printer_module/res/theme.dart';
 import 'package:printer_module/ui/menu.dart';
 import 'package:printer_module/ui/print.dart';
 
-/// [BillingPage] is the home screen of the app
 class BillingPage extends StatefulWidget {
   const BillingPage({Key? key}) : super(key: key);
 
@@ -28,21 +27,22 @@ class _BillingPageState extends State<BillingPage> {
   AppSettings appSettings = AppSettings();
   SellersDb sellersDb = SellersDb();
   Iterable<SellerModel> sellersList = [];
-  TextEditingController fatCtr = TextEditingController(),
-      snfCtr = TextEditingController(),
-      weightCtr = TextEditingController();
-  SellerModel? sellerModel;
+  final TextEditingController fatCtr = TextEditingController();
+  final TextEditingController snfCtr = TextEditingController();
+  final TextEditingController weightCtr = TextEditingController();
   SellerModel? sellerModelChoice;
   late ValueListenable<Box> boxListener;
 
   @override
   void initState() {
     super.initState();
-
     sellersList = sellersDb.getSellers();
     Logger().d(sellersList);
 
-    /// add a listener for syncing [sellersList] for [Dropdown]
+    // Auto-select shift by system time
+    final hour = DateTime.now().hour;
+    shiftType = (hour < 12) ? ShiftType.morning : ShiftType.evening;
+
     boxListener = Hive.box("sellerBox").listenable();
     boxListener.addListener(() {
       sellerModelChoice = null;
@@ -57,458 +57,327 @@ class _BillingPageState extends State<BillingPage> {
     super.dispose();
   }
 
+  void _reset() {
+    fatCtr.clear();
+    snfCtr.clear();
+    weightCtr.clear();
+    setState(() {
+      selectedMilkType = MilkType.cow;
+      sellerModelChoice = null;
+    });
+  }
+
+  void _proceed() {
+    if (fatCtr.text.isEmpty ||
+        snfCtr.text.isEmpty ||
+        weightCtr.text.isEmpty ||
+        sellerModelChoice == null) {
+      showErrorSnackBar(
+          context: context, message: "Please fill all fields and select a seller");
+      return;
+    }
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => PrintUi(
+                  sellerModel: sellerModelChoice!,
+                  fat: fatCtr.text.trim(),
+                  snf: snfCtr.text.trim(),
+                  milkType: selectedMilkType,
+                  weight: weightCtr.text.trim(),
+                  shift: shiftType,
+                )));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: appBar(context),
-        body: Padding(
-          padding: const EdgeInsets.only(top: 10.0, left: 10, right: 10),
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              children: [
-                setupError(),
-                space(),
-                sellerDropdown(),
-                space(),
-                fatInput(),
-                space(),
-                snfInput(),
-                space(),
-                priceInput(),
-                space(),
-                fatTypeRadio(),
-                space(),
-                shiftTypeRadio(),
-                space(),
-                primaryButtons(context)
-              ],
-            ),
-          ),
-        ));
-  }
-
-  Container space() {
-    return Container(
-      height: 20,
+      backgroundColor: AppTheme.bg,
+      appBar: _appBar(),
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(children: [
+          _setupWarning(),
+          _dateShiftHeader(),
+          const SizedBox(height: 16),
+          _sellerCard(),
+          const SizedBox(height: 12),
+          _measurementsCard(),
+          const SizedBox(height: 12),
+          _milkTypeCard(),
+          const SizedBox(height: 12),
+          _shiftCard(),
+          const SizedBox(height: 24),
+          _actionButtons(),
+        ]),
+      ),
     );
   }
 
-  Row primaryButtons(BuildContext context) {
-    return Row(children: <Widget>[
-      Expanded(
-          child: Padding(
-        padding: const EdgeInsets.all(5.0),
-        child: MaterialButton(
-            height: 45,
-            color: Colors.grey,
-            onPressed: () {
-              fatCtr.text = "";
-              snfCtr.text = "";
-              weightCtr.text = "";
-              selectedMilkType = MilkType.cow;
-              setState(() {});
-            },
-            child: Text("Reset",
-                style: GoogleFonts.poppins(
-                    color: Colors.white, fontWeight: FontWeight.bold))),
-      )),
-      Expanded(
-          child: Padding(
-        padding: const EdgeInsets.all(5.0),
-        child: MaterialButton(
-            height: 45,
-            color: Colors.green,
-            onPressed: () {
-              // file exists, do other operations
-              if (fatCtr.text.isEmpty ||
-                  snfCtr.text.isEmpty ||
-                  weightCtr.text.isEmpty ||
-                  sellerModelChoice == null) {
-                showErrorSnackBar(
-                    context: context,
-                    message: "Please fill the input forms correctly");
-                return;
-              }
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => PrintUi(
-                          sellerModel: sellerModelChoice!,
-                          fat: fatCtr.text.trim(),
-                          snf: snfCtr.text.trim(),
-                          milkType: selectedMilkType,
-                          weight: weightCtr.text.trim(),
-                          shift: shiftType
-                          )));
-            },
-            child: Text(
-              "PRINT",
-              style: GoogleFonts.poppins(
-                  color: Colors.white, fontWeight: FontWeight.bold),
-            )),
-      )),
-    ]);
-  }
-
-  Column fatTypeRadio() {
-    return Column(
-      children: [
-        Container(
-          width: double.maxFinite,
-          padding: const EdgeInsets.all(10),
-          child: Text(
-            "FAT Type",
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: <Widget>[
-            InkWell(
-              onTap: () {
-                setState(() {
-                  selectedMilkType = MilkType.cow;
-                });
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                    color: (selectedMilkType == MilkType.cow)
-                        ? AppColors.secondaryColor
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(10)),
-                height: 50,
-                width: 0.45 * MediaQuery.of(context).size.width,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "🐄",
-                      style: TextStyle(
-                        fontSize: 25,
-                        fontWeight: (selectedMilkType == MilkType.cow)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (selectedMilkType != MilkType.cow)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                    Text(
-                      "  Cow",
-                      style: TextStyle(
-                        fontWeight: (selectedMilkType == MilkType.cow)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (selectedMilkType != MilkType.cow)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            InkWell(
-              onTap: () {
-                setState(() {
-                  selectedMilkType = MilkType.buffalo;
-                });
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                    color: (selectedMilkType != MilkType.cow)
-                        ? AppColors.secondaryColor
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(10)),
-                height: 50,
-                width: 0.45 * MediaQuery.of(context).size.width,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "🐃",
-                      style: TextStyle(
-                        fontSize: 25,
-                        fontWeight: (selectedMilkType != MilkType.cow)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (selectedMilkType == MilkType.cow)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                    Text(
-                      " Buffalo",
-                      style: TextStyle(
-                        fontWeight: (selectedMilkType != MilkType.cow)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (selectedMilkType == MilkType.cow)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+  GradientAppBar _appBar() {
+    return GradientAppBar(
+      leading: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Image.asset("assets/logo.png"),
+      ),
+      title: const Text("Dashboard"),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.menu_rounded),
+          onPressed: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const MenuUi())),
         )
       ],
     );
   }
 
-Column shiftTypeRadio() {
-    return Column(
-      children: [
-        Container(
-          width: double.maxFinite,
-          padding: const EdgeInsets.all(10),
-          child: Text(
-            "Shift Type",
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: <Widget>[
-            InkWell(
-              onTap: () {
-                setState(() {
-                  shiftType = ShiftType.morning;
-                });
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                    color: (shiftType == ShiftType.morning)
-                        ? AppColors.secondaryColor
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(10)),
-                height: 50,
-                width: 0.45 * MediaQuery.of(context).size.width,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "🌅",
-                      style: TextStyle(
-                        fontSize: 25,
-                        fontWeight: (shiftType == ShiftType.morning)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (shiftType != ShiftType.morning)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                    Text(
-                      "  Morning",
-                      style: TextStyle(
-                        fontWeight: (shiftType == ShiftType.morning)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (shiftType != ShiftType.morning)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            InkWell(
-              onTap: () {
-                setState(() {
-                  shiftType = ShiftType.evening;
-                });
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                    color: (shiftType != ShiftType.morning)
-                        ? AppColors.secondaryColor
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(10)),
-                height: 50,
-                width: 0.45 * MediaQuery.of(context).size.width,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "🌃",
-                      style: TextStyle(
-                        fontSize: 25,
-                        fontWeight: (shiftType != ShiftType.morning)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (shiftType == ShiftType.morning)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                    Text(
-                      " evening",
-                      style: TextStyle(
-                        fontWeight: (shiftType != ShiftType.morning)
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: (shiftType == ShiftType.morning)
-                            ? AppColors.secondaryColor
-                            : Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        )
-      ],
-    );
-  }
-
-  TextField priceInput() {
-    return TextField(
-      controller: weightCtr,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10.0),
-          ),
-          focusedBorder: const OutlineInputBorder(
-            // width: 0.0 produces a thin "hairline" border
-            borderSide: BorderSide(color: Colors.black, width: 1.5),
-          ),
-          filled: true,
-          label: Text(
-            "Weight",
-            style: GoogleFonts.poppins(color: Colors.black),
-          ),
-          hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
-          hintText: "Weight of milk...",
-          fillColor: Colors.white70),
-    );
-  }
-
-  TextField snfInput() {
-    return TextField(
-      controller: snfCtr,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10.0),
-          ),
-          focusedBorder: const OutlineInputBorder(
-            // width: 0.0 produces a thin "hairline" border
-            borderSide: BorderSide(color: Colors.black, width: 1.5),
-          ),
-          filled: true,
-          label: Text(
-            "SNF",
-            style: GoogleFonts.poppins(color: Colors.black),
-          ),
-          hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
-          hintText: "Type SNF amount here...",
-          fillColor: Colors.white70),
-    );
-  }
-
-  TextField fatInput() {
-    return TextField(
-      controller: fatCtr,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10.0),
-          ),
-          focusedBorder: const OutlineInputBorder(
-            // width: 0.0 produces a thin "hairline" border
-            borderSide: BorderSide(color: Colors.black, width: 1.5),
-          ),
-          filled: true,
-          label: Text(
-            "FAT",
-            style: GoogleFonts.poppins(color: Colors.black),
-          ),
-          hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
-          hintText: "Type FAT amount here...",
-          fillColor: Colors.white70),
-    );
-  }
-
-  ValueListenableBuilder<Box<dynamic>> sellerDropdown() {
-    return ValueListenableBuilder(
-        valueListenable: Hive.box("sellerBox").listenable(),
-        builder: (BuildContext context, Box<dynamic> b, d) {
-          return Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10.0),
-                border: Border.all(
-                  color: Colors.black,
-                )),
-            child: DropdownButton<SellerModel>(
-                borderRadius: BorderRadius.circular(10),
-                underline: const SizedBox(),
-                isExpanded: true,
-                value: sellerModelChoice,
-                hint: const Text("Select a Seller from the dropdown"),
-                items: sellersList
-                    .map((e) => DropdownMenuItem(
-                        value: e, child: Text(e.sellerName.toString())))
-                    .toList(),
-                onChanged: (dynamic c) {
-                  setState(() {
-                    sellerModelChoice = c;
-                  });
-                }),
-          );
-        });
-  }
-
-  ValueListenableBuilder<Box<dynamic>> setupError() {
+  Widget _setupWarning() {
     return ValueListenableBuilder(
         valueListenable: Hive.box("settingBox").listenable(),
-        builder: (BuildContext context, Box<dynamic> b, d) {
-          return Visibility(
-            visible: !appSettings.hasBeenSetupCheck(),
-            child: Container(
-              padding: const EdgeInsets.all(15),
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                  color: Colors.red, borderRadius: BorderRadius.circular(10)),
-              child: const Text(
-                "The app has not been setup correctly. Please Setup by clicking the Eye icon at the Appbar",
-                style: TextStyle(color: Colors.white),
+        builder: (context, Box<dynamic> b, _) {
+          if (appSettings.hasBeenSetupCheck()) return const SizedBox.shrink();
+          return Container(
+            width: double.maxFinite,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEE),
+                border: Border.all(color: Colors.red.shade200),
+                borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "App not configured. Tap the menu icon to set up.",
+                  style: GoogleFonts.poppins(
+                      color: Colors.red.shade700, fontSize: 12),
+                ),
               ),
-            ),
+            ]),
           );
         });
   }
 
-  AppBar appBar(BuildContext context) {
-    return AppBar(
-      leading: Padding(
-        padding: const EdgeInsets.all(4.0),
-        child: Image.asset("assets/logo.png", width: 20,height: 20,),
+  Widget _dateShiftHeader() {
+    final now = DateTime.now();
+    final months = [
+      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final dateStr = "${now.day} ${months[now.month]} ${now.year}";
+    final isAM = shiftType == ShiftType.morning;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppTheme.navy, AppTheme.primaryDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(14),
       ),
-      backgroundColor: const Color(0xff000311),
-      title: Text(
-        AppStrings.homeTitle,
-      ),
-      actions: [
-        GestureDetector(
-          onTap: () {
-            Navigator.push(
-                context, MaterialPageRoute(builder: (_) => const MenuUi()));
-          },
-          child: const Padding(
-            padding: EdgeInsets.only(right: 15.0),
-            child: Icon(Icons.settings),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(dateStr,
+              style: GoogleFonts.poppins(
+                  color: Colors.white70, fontSize: 12)),
+          Text("New Bill",
+              style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold)),
+        ]),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(20),
           ),
-        )
-      ],
+          child: Row(children: [
+            Icon(isAM ? Icons.wb_sunny_rounded : Icons.nights_stay_rounded,
+                color: isAM ? Colors.amber : Colors.indigo.shade200, size: 16),
+            const SizedBox(width: 6),
+            Text(isAM ? "Morning" : "Evening",
+                style: GoogleFonts.poppins(
+                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+          ]),
+        ),
+      ]),
     );
+  }
+
+  Widget _sellerCard() {
+    return _sectionCard(
+      icon: Icons.person_rounded,
+      title: "Seller",
+      child: ValueListenableBuilder(
+          valueListenable: Hive.box("sellerBox").listenable(),
+          builder: (context, Box<dynamic> b, _) {
+            return DropdownButtonHideUnderline(
+              child: DropdownButton<SellerModel>(
+                isExpanded: true,
+                value: sellerModelChoice,
+                hint: Text("Select a seller",
+                    style: GoogleFonts.poppins(
+                        color: Colors.grey[500], fontSize: 14)),
+                borderRadius: BorderRadius.circular(10),
+                items: sellersList
+                    .map((e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e.sellerName.toString(),
+                            style: GoogleFonts.poppins(fontSize: 14))))
+                    .toList(),
+                onChanged: (c) => setState(() => sellerModelChoice = c),
+              ),
+            );
+          }),
+    );
+  }
+
+  Widget _measurementsCard() {
+    return _sectionCard(
+      icon: Icons.science_rounded,
+      title: "Measurements",
+      child: Column(children: [
+        _inputField(fatCtr, "FAT", "e.g. 3.5"),
+        const SizedBox(height: 10),
+        _inputField(snfCtr, "SNF", "e.g. 8.2"),
+        const SizedBox(height: 10),
+        _inputField(weightCtr, "Weight (litres)", "e.g. 10.0"),
+      ]),
+    );
+  }
+
+  Widget _inputField(
+      TextEditingController ctr, String label, String hint) {
+    return TextField(
+      controller: ctr,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(labelText: label, hintText: hint),
+    );
+  }
+
+  Widget _milkTypeCard() {
+    return _sectionCard(
+      icon: Icons.water_drop_rounded,
+      title: "Milk Type",
+      child: Row(children: [
+        _toggleOption(
+          selected: selectedMilkType == MilkType.cow,
+          label: "🐄  Cow",
+          onTap: () => setState(() => selectedMilkType = MilkType.cow),
+        ),
+        const SizedBox(width: 10),
+        _toggleOption(
+          selected: selectedMilkType == MilkType.buffalo,
+          label: "🐃  Buffalo",
+          onTap: () => setState(() => selectedMilkType = MilkType.buffalo),
+        ),
+      ]),
+    );
+  }
+
+  Widget _shiftCard() {
+    return _sectionCard(
+      icon: Icons.access_time_rounded,
+      title: "Shift",
+      child: Row(children: [
+        _toggleOption(
+          selected: shiftType == ShiftType.morning,
+          label: "🌅  Morning",
+          onTap: () => setState(() => shiftType = ShiftType.morning),
+        ),
+        const SizedBox(width: 10),
+        _toggleOption(
+          selected: shiftType == ShiftType.evening,
+          label: "🌃  Evening",
+          onTap: () => setState(() => shiftType = ShiftType.evening),
+        ),
+      ]),
+    );
+  }
+
+  Widget _toggleOption(
+      {required bool selected,
+      required String label,
+      required VoidCallback onTap}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primary : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? AppTheme.primary : Colors.grey.shade300,
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : Colors.grey.shade600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionCard(
+      {required IconData icon,
+      required String title,
+      required Widget child}) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon, size: 16, color: AppTheme.primary),
+            const SizedBox(width: 6),
+            Text(title,
+                style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primary,
+                    letterSpacing: 0.5)),
+          ]),
+          const SizedBox(height: 12),
+          child,
+        ]),
+      ),
+    );
+  }
+
+  Widget _actionButtons() {
+    return Row(children: [
+      Expanded(
+        child: OutlinedButton.icon(
+          onPressed: _reset,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text("Reset"),
+          style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14)),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        flex: 2,
+        child: ElevatedButton.icon(
+          onPressed: _proceed,
+          icon: const Icon(Icons.receipt_long_rounded, size: 18),
+          label: const Text("Generate Bill"),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.accent,
+              padding: const EdgeInsets.symmetric(vertical: 14)),
+        ),
+      ),
+    ]);
   }
 }

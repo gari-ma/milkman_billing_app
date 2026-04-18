@@ -1,8 +1,12 @@
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:printer_module/res/gradient_app_bar.dart';
 import '../../db/setting_db.dart';
 import '../../extension/snackbar_xn.dart';
+
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -12,29 +16,44 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  //late File file;
   late AppSettings appSettings;
   TextEditingController buyerNameCtr = TextEditingController(),
       sgstCtr = TextEditingController(),
-      cgstCtr = TextEditingController();
+      cgstCtr = TextEditingController(),
+      businessNameCtr = TextEditingController(),
+      businessAddressCtr = TextEditingController(),
+      businessPhoneCtr = TextEditingController();
+  String _logoPath = "";
 
   @override
   void initState() {
     super.initState();
     appSettings = AppSettings();
-
     _setupInputs();
   }
 
   void _setupInputs() {
-    // file = File(appSettings.filePath);
     buyerNameCtr.text = appSettings.buyerName;
     sgstCtr.text = appSettings.sgst.toString();
     cgstCtr.text = appSettings.cgst.toString();
+    businessNameCtr.text = appSettings.businessName;
+    businessAddressCtr.text = appSettings.businessAddress;
+    businessPhoneCtr.text = appSettings.businessPhone;
+    _logoPath = appSettings.logoPath;
+  }
+
+  void _pickLogo() async {
+    FilePickerResult? result = await FilePicker.pickFiles(
+      type: FileType.image,
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _logoPath = result.files.single.path!;
+      });
+    }
   }
 
   void _checkAndSaveData(BuildContext context) {
-    // file exists, do other operations
     if (sgstCtr.text.isEmpty || cgstCtr.text.isEmpty) {
       showErrorSnackBar(
           context: context,
@@ -43,12 +62,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     if (appSettings.saveSettings(
-            buyerNameCtr.text.trim(),
-            double.parse(sgstCtr.text.trim()),
-            double.parse(cgstCtr.text.trim()),
-            "") ==
+          buyerNameCtr.text.trim(),
+          double.parse(sgstCtr.text.trim()),
+          double.parse(cgstCtr.text.trim()),
+          "",
+          businessName: businessNameCtr.text.trim(),
+          businessAddress: businessAddressCtr.text.trim(),
+          businessPhone: businessPhoneCtr.text.trim(),
+          logoPath: _logoPath,
+        ) ==
         1) {
-      // success saved
       showSuccessSnackBar(context: context, message: "Successfully Saved");
     }
   }
@@ -56,141 +79,131 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Settings"),
-      ),
+      appBar: const GradientAppBar(title: Text("Settings")),
       body: ListView(
         physics: const BouncingScrollPhysics(),
         children: [
           const ListTile(
-            title: Text("Company's Information"),
+            title: Text("Business Information"),
           ),
-          buyersName(),
-          Container(
-            height: 20,
+          _logoPickerWidget(),
+          const SizedBox(height: 16),
+          _field(businessNameCtr, "Business Name", "Your business name..."),
+          const SizedBox(height: 16),
+          _field(businessAddressCtr, "Business Address", "Business address..."),
+          const SizedBox(height: 16),
+          _field(businessPhoneCtr, "Business Phone", "Phone number...",
+              type: TextInputType.phone),
+          const Divider(height: 32),
+          const ListTile(
+            title: Text("Buyer & Tax Information"),
           ),
-          sgstInput(),
-          Container(
-            height: 20,
-          ),
-          cgstInput(),
-          Container(
-            height: 20,
-          ),
-          saveButton(),
-          Container(
-            height: 20,
-          ),
+          _field(buyerNameCtr, "Buyer's Name", "Buyer's name..."),
+          const SizedBox(height: 16),
+          _field(sgstCtr, "SGST %", "SGST Percentage",
+              type: TextInputType.number),
+          const SizedBox(height: 16),
+          _field(cgstCtr, "CGST %", "CGST Percentage",
+              type: TextInputType.number),
+          const SizedBox(height: 20),
+          _saveButton(),
+          const SizedBox(height: 20),
         ],
       ),
     );
   }
 
-  Widget saveButton() {
+  Widget _logoPickerWidget() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Business Logo",
+              style: GoogleFonts.poppins(
+                  color: Colors.black, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: _pickLogo,
+            child: Container(
+              width: double.maxFinite,
+              height: 120,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(10),
+                color: Colors.grey[100],
+              ),
+              child: _logoPath.isNotEmpty && File(_logoPath).existsSync()
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(File(_logoPath), fit: BoxFit.contain))
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate_outlined,
+                            size: 40, color: Colors.grey[500]),
+                        const SizedBox(height: 6),
+                        Text("Tap to select logo",
+                            style: GoogleFonts.poppins(color: Colors.grey[600]))
+                      ],
+                    ),
+            ),
+          ),
+          if (_logoPath.isNotEmpty)
+            TextButton(
+              onPressed: () => setState(() => _logoPath = ""),
+              child: Text("Remove logo",
+                  style: GoogleFonts.poppins(color: Colors.red)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Padding _field(TextEditingController ctr, String label, String hint,
+      {TextInputType type = TextInputType.text}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15.0),
+      child: TextField(
+        controller: ctr,
+        keyboardType: type,
+        decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10.0),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.black, width: 1.5),
+            ),
+            filled: true,
+            label: Text(label, style: GoogleFonts.poppins(color: Colors.black)),
+            hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
+            hintText: hint,
+            fillColor: Colors.white70),
+      ),
+    );
+  }
+
+  Widget _saveButton() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 15.0),
       child: InkWell(
-        onTap: () {
-          _checkAndSaveData(context);
-        },
+        onTap: () => _checkAndSaveData(context),
         child: TextField(
           enabled: false,
           decoration: InputDecoration(
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10.0),
               ),
-              focusedBorder: const OutlineInputBorder(
-                // width: 0.0 produces a thin "hairline" border
-                borderSide: BorderSide(color: Colors.green, width: 1.5),
-              ),
               filled: true,
               label: Center(
                 child: Text(
                   "Save",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.poppins(color: Colors.white),
                 ),
               ),
-              hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
               fillColor: Colors.green),
         ),
-      ),
-    );
-  }
-
-  Padding cgstInput() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 15.0),
-      child: TextField(
-        controller: cgstCtr,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.0),
-            ),
-            focusedBorder: const OutlineInputBorder(
-              // width: 0.0 produces a thin "hairline" border
-              borderSide: BorderSide(color: Colors.black, width: 1.5),
-            ),
-            label: Text(
-              "CGST",
-              style: GoogleFonts.poppins(color: Colors.black),
-            ),
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
-            hintText: "CGST Percentage",
-            fillColor: Colors.white70),
-      ),
-    );
-  }
-
-  Padding sgstInput() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 15.0),
-      child: TextField(
-        controller: sgstCtr,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.0),
-            ),
-            focusedBorder: const OutlineInputBorder(
-              // width: 0.0 produces a thin "hairline" border
-              borderSide: BorderSide(color: Colors.black, width: 1.5),
-            ),
-            label: Text(
-              "SGST",
-              style: GoogleFonts.poppins(color: Colors.black),
-            ),
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
-            hintText: "SGST Percentage",
-            fillColor: Colors.white70),
-      ),
-    );
-  }
-
-  Padding buyersName() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 15.0),
-      child: TextField(
-        controller: buyerNameCtr,
-        decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.0),
-            ),
-            focusedBorder: const OutlineInputBorder(
-              // width: 0.0 produces a thin "hairline" border
-              borderSide: BorderSide(color: Colors.black, width: 1.5),
-            ),
-            filled: true,
-            label: Text(
-              "Buyer`s name",
-              style: GoogleFonts.poppins(color: Colors.black),
-            ),
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[800]),
-            hintText: "Buyer`s Name",
-            fillColor: Colors.white70),
       ),
     );
   }

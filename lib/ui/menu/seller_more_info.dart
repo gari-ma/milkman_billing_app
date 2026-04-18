@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:printer_module/res/gradient_app_bar.dart';
 import 'package:printer_module/db/bill_db.dart';
 import 'package:printer_module/db/price_db.dart';
 import 'package:printer_module/model/bill_model.dart';
@@ -31,7 +32,7 @@ class _SellerMoreInfoState extends State<SellerMoreInfo> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
+        appBar: GradientAppBar(
           title: Text(widget.sellerModel.sellerName!),
         ),
         body: _listOfBillModel.isEmpty ? Container(

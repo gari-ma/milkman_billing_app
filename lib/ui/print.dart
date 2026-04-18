@@ -1,7 +1,12 @@
 
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:printer_module/db/bill_db.dart';
 import 'package:printer_module/db/price_db.dart';
 import 'package:printer_module/db/setting_db.dart';
@@ -9,6 +14,7 @@ import 'package:printer_module/extension/snackbar_xn.dart';
 import 'package:printer_module/model/bill_model.dart';
 import 'package:printer_module/model/seller_model.dart';
 import 'package:printer_module/res/strings.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// [PrintUi] shows the bill in viewable format before printing
 ///
@@ -46,6 +52,7 @@ class _PrintUiState extends State<PrintUi> {
   bool _connected = false;
   late BluetoothDevice? bluetoothDevice;
   late BlueThermalPrinter blueThermalPrinter;
+  final GlobalKey _invoiceKey = GlobalKey();
 
   @override
   void dispose() {
@@ -63,15 +70,13 @@ class _PrintUiState extends State<PrintUi> {
       _connected = true;
       setState(() {});
     }).catchError((e) {
-      showErrorSnackBar(
-          context: context,
-          message: "Error connecting to Printer. Please see the settings tab.");
+      // Bluetooth not available — user can still save without printing
     });
 
     price = _priceDb.getPriceFromTable(
         fat: widget.fat, snf: widget.snf, milkType: widget.milkType);
     completePrice = double.parse(
-        (double.parse(widget.weight) * price).toStringAsFixed(2)); // Milk Price
+        (double.parse(widget.weight) * price).toStringAsFixed(2));
     sgstPrice = double.parse(
         ((_appSettings.sgst / 100) * completePrice).toStringAsFixed(2));
     cgstPrice = double.parse(
@@ -82,20 +87,9 @@ class _PrintUiState extends State<PrintUi> {
     super.initState();
   }
 
+  // ── Print function: DO NOT MODIFY ──────────────────────────────────────────
   Future<dynamic> printInvoice() async {
-    // size
-    // 0 => normal
-    // 1 => normal bold
-    // 2 => medium bold
-    // 3 => high bold
-
-    // align
-    // 0 => left
-    // 1 => center
-    // 2 => right
-
     await blueThermalPrinter.printNewLine();
-    // blueThermalPrinter.printImage(_appSettings.filePath);
     await blueThermalPrinter.printCustom(AppStrings.companyName, 3, 1);
     await blueThermalPrinter.printCustom(AppStrings.address, 1, 1);
     await blueThermalPrinter.printCustom(AppStrings.phoneNumber, 1, 1);
@@ -108,7 +102,7 @@ class _PrintUiState extends State<PrintUi> {
 
     await blueThermalPrinter.printCustom(
         "Phone: ${widget.sellerModel.sellerContactDetails}", 0, 0);
-        
+
     await blueThermalPrinter.printCustom(
         "------------------------------", 0, 0);
     await blueThermalPrinter.printCustom(
@@ -141,298 +135,428 @@ class _PrintUiState extends State<PrintUi> {
     await blueThermalPrinter.paperCut();
     return true;
   }
+  // ───────────────────────────────────────────────────────────────────────────
+
+  void _saveBill() {
+    if (!widget.isSaveEnabled) return;
+    _billDb.addNewBill(BillModel(
+        fat: double.parse(widget.fat),
+        snf: double.parse(widget.snf),
+        weight: double.parse(widget.weight),
+        price: completePrice,
+        sellerSlug: widget.sellerModel.sellerSlug,
+        invoiceNumber: _billDb.getLength(),
+        dateEpoch: _dateTime.millisecondsSinceEpoch.toString(),
+        shift: widget.shift.index,
+        milkType: widget.milkType.index));
+  }
+
+  Future<void> _shareAsImage() async {
+    try {
+      final boundary = _invoiceKey.currentContext!.findRenderObject()
+          as RenderRepaintBoundary;
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final bytes = byteData!.buffer.asUint8List();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/bill_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/png')],
+        text: 'Milk Bill',
+      );
+    } catch (e) {
+      if (mounted) {
+        showErrorSnackBar(context: context, message: "Could not share bill: $e");
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey,
+      backgroundColor: const Color(0xFFEEEEEE),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(5.0),
-          child: Card(
-            child: Container(
-              width: double.maxFinite,
-              height: double.maxFinite,
-              padding: const EdgeInsets.symmetric(vertical: 15.0),
+        child: Column(
+          children: [
+            Expanded(
               child: SingleChildScrollView(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [invoiceWidget(), buttons(context)],
+                padding: const EdgeInsets.all(12),
+                child: RepaintBoundary(
+                  key: _invoiceKey,
+                  child: invoiceWidget(),
                 ),
               ),
             ),
-          ),
+            _buttons(context),
+          ],
         ),
       ),
     );
   }
 
-  Row buttons(BuildContext context) {
-    return Row(children: <Widget>[
-      Expanded(
-          child: Padding(
-        padding: const EdgeInsets.all(5.0),
-        child: MaterialButton(
-            height: 45,
-            color: Colors.grey,
+  Widget _buttons(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(children: <Widget>[
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: Text("Cancel",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Share to WhatsApp button
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14)),
+          onPressed: _shareAsImage,
+          child: const Icon(Icons.share, color: Colors.white),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueGrey,
+                padding: const EdgeInsets.symmetric(vertical: 14)),
             onPressed: () {
+              _saveBill();
+              showSuccessSnackBar(
+                  context: context, message: "Recorded successfully");
               Navigator.pop(context);
             },
-            child: Text("Cancel",
+            child: Text("Save",
                 style: GoogleFonts.poppins(
-                    color: Colors.white, fontWeight: FontWeight.bold))),
-      )),
-      Expanded(
-          child: Padding(
-        padding: const EdgeInsets.all(5.0),
-        child: MaterialButton(
-            height: 45,
-            color: Colors.green,
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                padding: const EdgeInsets.symmetric(vertical: 14)),
             onPressed: () async {
               if (_connected) {
                 await printInvoice().then((value) {
+                  if (!mounted) return;
                   if (value == true) {
-                    if (widget.isSaveEnabled) {
-                      _billDb.addNewBill(BillModel(
-                          fat: double.parse(widget.fat),
-                          snf: double.parse(widget.snf),
-                          weight: double.parse(widget.weight),
-                          price: completePrice,
-                          sellerSlug: widget.sellerModel.sellerSlug,
-                          invoiceNumber: _billDb.getLength(),
-                          dateEpoch:
-                              _dateTime.millisecondsSinceEpoch.toString(),
-                          shift: widget.shift.index,
-                          milkType: widget.milkType.index));
-                    }
-
+                    _saveBill();
                     showSuccessSnackBar(
                         context: context, message: "Printed Successfully");
-
                     Navigator.pop(context);
                   }
                 });
               } else {
-
-                  //  _billDb.addNewBill(BillModel(
-                  //         fat: double.parse(widget.fat),
-                  //         snf: double.parse(widget.snf),
-                  //         weight: double.parse(widget.weight),
-                  //         price: completePrice,
-                  //         sellerSlug: widget.sellerModel.sellerSlug,
-                  //         invoiceNumber: _billDb.getLength(),
-                  //         dateEpoch:
-                  //             _dateTime.millisecondsSinceEpoch.toString(),
-                  //         shift: widget.shift.index,
-                  //         milkType: widget.milkType.index));
                 showErrorSnackBar(
                     context: context,
-                    message: "Failed: Printer not connected!");
+                    message: "Printer not connected! Use Save to record only.");
               }
             },
-            child: Text(
-              "PRINT",
-              style: GoogleFonts.poppins(
-                  color: Colors.white, fontWeight: FontWeight.bold),
-            )),
-      )),
-    ]);
-  }
-
-  Padding invoiceWidget() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 15.0),
-      child: Column(children: [
-        Container(
-          height: 10,
-        ),
-        Text(
-          AppStrings.companyName,
-          textAlign: TextAlign.center,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 17),
-        ),
-        Text(
-          AppStrings.address,
-          style: GoogleFonts.poppins(fontSize: 17),
-        ),
-        (AppStrings.phoneNumber.isNotEmpty)
-            ? Text(
-                AppStrings.phoneNumber,
-                style: GoogleFonts.poppins(fontSize: 17),
-              )
-            : Container(),
-        Container(
-          width: double.maxFinite,
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Buyer: ${_appSettings.buyerName}",
-                style: GoogleFonts.poppins(fontSize: 15),
-              ),
-              Text(
-                "-------------------------------------------------",
-                style: GoogleFonts.poppins(fontSize: 10),
-              ),
-              Text(
-                "Seller: ${widget.sellerModel.sellerName!}  (${widget.sellerModel.sellerAddress})   Phone: ${widget.sellerModel.sellerContactDetails}",
-                style: GoogleFonts.poppins(fontSize: 15),
-              ),
-              Text(
-                "-------------------------------------------------",
-                style: GoogleFonts.poppins(fontSize: 10),
-              ),
-              Text(
-                "Invoice number: ${_billDb.getLength()}",
+            child: Text("Print",
                 style: GoogleFonts.poppins(
-                    fontSize: 15, fontWeight: FontWeight.w500),
-              ),
-              Text(
-                "Date: ${_dateTime.year}-${_dateTime.month}-${_dateTime.day}          Time: ${TimeOfDay.fromDateTime(_dateTime).hourOfPeriod}:${TimeOfDay.fromDateTime(_dateTime).minute} ${(TimeOfDay.fromDateTime(_dateTime).period == DayPeriod.pm) ? "PM" : "AM"}",
-                style: GoogleFonts.poppins(
-                    fontSize: 15, fontWeight: FontWeight.w500),
-              ),
-              Container(
-                width: double.maxFinite,
-                padding: const EdgeInsets.only(top: 10),
-                child: DataTable(
-                    headingRowHeight: 35,
-                    dataRowHeight: 35,
-                    dataTextStyle: GoogleFonts.ubuntu(color: Colors.black),
-                    headingRowColor: MaterialStateProperty.resolveWith(
-                        (states) => Colors.grey),
-                    columns: [
-                      DataColumn(
-                          label: Text(
-                        "ITEM",
-                        style: GoogleFonts.poppins(
-                            color: Colors.white, fontWeight: FontWeight.w600),
-                      )),
-                      DataColumn(
-                          label: Text(
-                        "Quantity",
-                        style: GoogleFonts.poppins(
-                            color: Colors.white, fontWeight: FontWeight.w600),
-                      )),
-                      DataColumn(
-                          label: Text(
-                        "Price",
-                        style: GoogleFonts.poppins(
-                            color: Colors.white, fontWeight: FontWeight.w600),
-                      ))
-                    ],
-                    rows: [
-                      DataRow(cells: [
-                        const DataCell(Text("FAT")),
-                        DataCell(Text("[${widget.fat}]")),
-                        const DataCell(Text("..."))
-                      ]),
-                      DataRow(cells: [
-                        const DataCell(Text("SNF")),
-                        DataCell(Text("[${widget.snf}]")),
-                        DataCell(Text(price.toString()))
-                      ]),
-                      DataRow(cells: [
-                        const DataCell(Text("Weight")),
-                        DataCell(Text("[${widget.weight} ltr]")),
-                        DataCell(Text(completePrice.toString()))
-                      ]),
-                      DataRow(
-                          color: MaterialStateProperty.resolveWith(
-                              (states) => const Color.fromARGB(255, 187, 150, 150)),
-                          cells: [
-                            DataCell(Text("TOTAL",
-                                style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold))),
-                            const DataCell(Text("                 ")),
-                            DataCell(Text(
-                              "Rs. $completePrice",
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ))
-                          ]),
-                      DataRow(
-                          color: MaterialStateProperty.resolveWith(
-                              (states) => const Color.fromARGB(255, 144, 115, 115)),
-                          cells: [
-                            DataCell(Text("SGST",
-                                style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold))),
-                            DataCell(Text(
-                              "${_appSettings.sgst}%",
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            )),
-                            DataCell(Text(
-                              "Rs. $sgstPrice",
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ))
-                          ]),
-                      DataRow(
-                          color: MaterialStateProperty.resolveWith(
-                              (states) => const Color.fromARGB(255, 121, 105, 105)),
-                          cells: [
-                            DataCell(Text("CGST",
-                                style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold))),
-                            DataCell(Text(
-                              "${_appSettings.cgst}%",
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            )),
-                            DataCell(Text(
-                              "Rs. $cgstPrice",
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ))
-                          ]),
-                      DataRow(
-                          color: MaterialStateProperty.resolveWith(
-                              (states) => const Color.fromARGB(255, 11, 0, 0)),
-                          cells: [
-                            DataCell(Text("Price",
-                                style: GoogleFonts.poppins(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold))),
-                            const DataCell(Text(
-                              " ",
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            )),
-                            DataCell(Text(
-                              "Rs. $grandTotal",
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ))
-                          ]),
-                      DataRow(cells: [
-                        const DataCell(Text("Type: ")),
-                        DataCell(Text((widget.milkType == MilkType.cow)
-                            ? "[✔️] Cow"
-                            : "[ ] Cow", style: TextStyle(fontSize: 0.035 * MediaQuery.of(context).size.width),)),
-                        DataCell(Text((widget.milkType == MilkType.buffalo)
-                            ? "[✔️] Buffallo"
-                            : "[ ] Buffallo", style: TextStyle(fontSize: 0.035 * MediaQuery.of(context).size.width),)),
-                      ]),
-                    ]),
-              ),
-            ],
+                    color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ),
       ]),
+    );
+  }
+
+  Widget invoiceWidget() {
+    final String bizName = _appSettings.businessName.isNotEmpty
+        ? _appSettings.businessName
+        : AppStrings.companyName;
+    final String bizAddress = _appSettings.businessAddress.isNotEmpty
+        ? _appSettings.businessAddress
+        : AppStrings.address;
+    final String bizPhone = _appSettings.businessPhone.isNotEmpty
+        ? _appSettings.businessPhone
+        : AppStrings.phoneNumber;
+    final String logoPath = _appSettings.logoPath;
+
+    final timeOfDay = TimeOfDay.fromDateTime(_dateTime);
+    final String timeStr =
+        "${timeOfDay.hourOfPeriod}:${timeOfDay.minute.toString().padLeft(2, '0')} ${timeOfDay.period == DayPeriod.pm ? 'PM' : 'AM'}";
+    final String dateStr =
+        "${_dateTime.day.toString().padLeft(2, '0')}-${_dateTime.month.toString().padLeft(2, '0')}-${_dateTime.year}";
+
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // ── Header ─────────────────────────────────────────────────────
+            if (logoPath.isNotEmpty && File(logoPath).existsSync())
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Image.file(File(logoPath), height: 72, fit: BoxFit.contain),
+              ),
+            Text(bizName,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                    fontSize: 18, fontWeight: FontWeight.bold)),
+            if (bizAddress.isNotEmpty)
+              Text(bizAddress,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700])),
+            if (bizPhone.isNotEmpty)
+              Text(bizPhone,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[700])),
+
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(thickness: 1.5),
+            ),
+
+            // ── Buyer / Seller info ─────────────────────────────────────────
+            _infoRow(Icons.business, "Buyer", _appSettings.buyerName),
+            const SizedBox(height: 6),
+            _infoRow(Icons.person, "Seller",
+                "${widget.sellerModel.sellerName}  ·  ${widget.sellerModel.sellerAddress}"),
+            _infoRow(Icons.phone, "Phone",
+                widget.sellerModel.sellerContactDetails ?? ""),
+
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(thickness: 1.5),
+            ),
+
+            // ── Invoice meta ────────────────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _chip(Icons.receipt_long,
+                    "Invoice #${_billDb.getLength()}", Colors.indigo),
+                _chip(Icons.calendar_today, dateStr, Colors.teal),
+                _chip(Icons.access_time, timeStr, Colors.orange),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _shiftChip(),
+                const SizedBox(width: 8),
+                _milkTypeChip(),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── Items table ──────────────────────────────────────────────────
+            _invoiceTable(),
+
+            const SizedBox(height: 16),
+
+            // ── Grand total banner ───────────────────────────────────────────
+            Container(
+              width: double.maxFinite,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF000311),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("Grand Total",
+                      style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                  Text("Rs. $grandTotal",
+                      style: GoogleFonts.poppins(
+                          color: Colors.greenAccent,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _invoiceTable() {
+    final rows = [
+      {"label": "FAT", "qty": widget.fat, "price": "—"},
+      {"label": "SNF", "qty": widget.snf, "price": "Rs. $price"},
+      {"label": "Weight", "qty": "${widget.weight} L", "price": "Rs. $completePrice"},
+      {"label": "SGST (${_appSettings.sgst}%)", "qty": "", "price": "Rs. $sgstPrice"},
+      {"label": "CGST (${_appSettings.cgst}%)", "qty": "", "price": "Rs. $cgstPrice"},
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(8)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                    flex: 3,
+                    child: Text("ITEM",
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600, fontSize: 12))),
+                Expanded(
+                    flex: 2,
+                    child: Text("QTY",
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600, fontSize: 12))),
+                Expanded(
+                    flex: 3,
+                    child: Text("PRICE",
+                        textAlign: TextAlign.end,
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600, fontSize: 12))),
+              ],
+            ),
+          ),
+          ...rows.asMap().entries.map((entry) {
+            final i = entry.key;
+            final row = entry.value;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              color: i.isEven ? Colors.white : Colors.grey.shade50,
+              child: Row(
+                children: [
+                  Expanded(
+                      flex: 3,
+                      child: Text(row["label"]!,
+                          style: GoogleFonts.poppins(fontSize: 13))),
+                  Expanded(
+                      flex: 2,
+                      child: Text(row["qty"]!,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, color: Colors.grey[600]))),
+                  Expanded(
+                      flex: 3,
+                      child: Text(row["price"]!,
+                          textAlign: TextAlign.end,
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, fontWeight: FontWeight.w500))),
+                ],
+              ),
+            );
+          }),
+          // Subtotal row
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey.shade50,
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(8)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                    flex: 3,
+                    child: Text("Subtotal",
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600, fontSize: 13))),
+                const Expanded(flex: 2, child: SizedBox()),
+                Expanded(
+                    flex: 3,
+                    child: Text("Rs. $completePrice",
+                        textAlign: TextAlign.end,
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600, fontSize: 13))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    if (value.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 6),
+          Text("$label: ",
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500)),
+          Expanded(
+              child: Text(value,
+                  style: GoogleFonts.poppins(
+                      fontSize: 13, fontWeight: FontWeight.w500))),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: GoogleFonts.poppins(
+                  fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _shiftChip() {
+    final isMorning = widget.shift == ShiftType.morning;
+    return _chip(
+        isMorning ? Icons.wb_sunny : Icons.nights_stay,
+        isMorning ? "Morning" : "Evening",
+        isMorning ? Colors.orange : Colors.indigo);
+  }
+
+  Widget _milkTypeChip() {
+    final isCow = widget.milkType == MilkType.cow;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.teal.withValues(alpha: 0.1),
+        border: Border.all(color: Colors.teal.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        isCow ? "🐄 Cow Milk" : "🐃 Buffalo Milk",
+        style: GoogleFonts.poppins(
+            fontSize: 12, color: Colors.teal, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }

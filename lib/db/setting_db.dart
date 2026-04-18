@@ -8,6 +8,10 @@ class AppSettings {
   double sgst = 0;
   double cgst = 0;
   String filePath = "";
+  String businessName = "";
+  String businessAddress = "";
+  String businessPhone = "";
+  String logoPath = "";
 
   // bluetooth connection params
   String? bluetoothName;
@@ -24,6 +28,10 @@ class AppSettings {
     sgst = _settingBox.get("sgst") ?? 0;
     cgst = _settingBox.get("cgst") ?? 0;
     filePath = _settingBox.get("filePath") ?? "";
+    businessName = _settingBox.get("businessName") ?? "";
+    businessAddress = _settingBox.get("businessAddress") ?? "";
+    businessPhone = _settingBox.get("businessPhone") ?? "";
+    logoPath = _settingBox.get("logoPath") ?? "";
     bluetoothName = _settingBox.get("bluetoothName");
     bluetoothAddress = _settingBox.get("bluetoothAddress");
   }
@@ -32,12 +40,20 @@ class AppSettings {
       String buyerName,
       double sgst,
       double cgst,
-      String filePath) {
+      String filePath, {
+      String businessName = "",
+      String businessAddress = "",
+      String businessPhone = "",
+      String logoPath = ""}) {
     _settingBox.put("hasBeenSetup", true);
     _settingBox.put("buyerName", buyerName);
     _settingBox.put("sgst", sgst);
     _settingBox.put("cgst", cgst);
     _settingBox.put("filePath", filePath);
+    _settingBox.put("businessName", businessName);
+    _settingBox.put("businessAddress", businessAddress);
+    _settingBox.put("businessPhone", businessPhone);
+    _settingBox.put("logoPath", logoPath);
     return 1;
   }
 

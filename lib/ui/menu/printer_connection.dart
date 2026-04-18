@@ -1,6 +1,7 @@
 
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:flutter/material.dart';
+import 'package:printer_module/res/gradient_app_bar.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:printer_module/db/setting_db.dart';
 import 'package:printer_module/extension/snackbar_xn.dart';
@@ -34,9 +35,7 @@ class _PrintScreenState extends State<PrintScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Thermal Printer Setting"),
-      ),
+      appBar: const GradientAppBar(title: Text("Thermal Printer Setting")),
       floatingActionButton: FloatingActionButton(
           backgroundColor: AppColors.secondaryColor,
           child: const Icon(

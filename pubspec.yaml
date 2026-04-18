@@ -13,9 +13,9 @@ dependencies:
   google_fonts:
   file_picker: ^11.0.2
   permission_handler:
-  hive: 
+  hive:
   hive_flutter:
-  flutter_slidable: ^4.0.3
+  flutter_slidable: ^3.0.1
   csv: ^5.0.1
   logger: ^1.1.0
   blue_thermal_printer:
@@ -23,6 +23,8 @@ dependencies:
       url: https://github.com/raihanArman/blue_thermal_printer.git
       ref: master
   intl: ^0.17.0
+  share_plus: ^10.0.0
+  path_provider: ^2.1.0
 
 
 dev_dependencies:
@@ -39,5 +41,4 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/
-
 

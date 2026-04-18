@@ -5,6 +5,7 @@ import 'package:printer_module/db/sellers_db.dart';
 import 'package:printer_module/extension/random_index_generator.dart';
 import 'package:printer_module/extension/snackbar_xn.dart';
 import 'package:printer_module/model/seller_model.dart';
+import 'package:printer_module/res/gradient_app_bar.dart';
 
 class AddSeller extends StatefulWidget {
   const AddSeller({Key? key}) : super(key: key);
@@ -47,9 +48,7 @@ class _AddSellerState extends State<AddSeller> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Add new Seller"),
-      ),
+      appBar: const GradientAppBar(title: Text("Add new Seller")),
       body: Padding(
         padding: const EdgeInsets.only(top: 18.0),
         child: mainListView(),

@@ -1,10 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:printer_module/db/sellers_db.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:printer_module/res/colors.dart';
+import 'package:printer_module/res/gradient_app_bar.dart';
+import 'package:printer_module/res/theme.dart';
 import 'package:printer_module/ui/menu/add_sellers.dart';
 import 'package:printer_module/ui/menu/seller_more_info.dart';
 
@@ -17,170 +17,187 @@ class SellersInfo extends StatefulWidget {
 
 class _SellersInfoState extends State<SellersInfo> {
   late Iterable _sellers;
-  SellersDb sellersDb = SellersDb();
-
+  final SellersDb sellersDb = SellersDb();
 
   @override
   void initState() {
     _sellers = sellersDb.getSellers();
-
     super.initState();
-  }
-
-  Widget noDataWidget() {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      margin: const EdgeInsets.only(top: 20, bottom: 20, left: 10, right: 10),
-      decoration: BoxDecoration(
-          color: (Platform.isAndroid) ?  Colors.green: Colors.white, borderRadius: BorderRadius.circular(10)),
-      child: Text(
-        "No any Sellers found. You can add them from the + Button located at the bottom right corner.",
-        style: TextStyle(color: (Platform.isAndroid) ?  Colors.white: Colors.black),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: const Text("Sellers Info"),
-        ),
-        floatingActionButton: FloatingActionButton(
-          backgroundColor: AppColors.secondaryColor,
-          onPressed: () {
-            Navigator.push(
-                context, MaterialPageRoute(builder: (_) => const AddSeller()));
-          },
-          child: const Icon(Icons.add),
-        ),
-        body: ValueListenableBuilder(
-            valueListenable: Hive.box("sellerBox").listenable(),
-            builder: (context, Box<dynamic> sBox, _) {
-              _sellers = sellersDb.getSellers();
-              return (_sellers.isEmpty)
-                  ? noDataWidget()
-                  : mainListView(context);
-            }));
+      backgroundColor: AppTheme.bg,
+      appBar: const GradientAppBar(title: Text("Sellers")),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => const AddSeller())),
+        child: const Icon(Icons.person_add_rounded),
+      ),
+      body: ValueListenableBuilder(
+          valueListenable: Hive.box("sellerBox").listenable(),
+          builder: (context, Box<dynamic> sBox, _) {
+            _sellers = sellersDb.getSellers();
+            if (_sellers.isEmpty) return _emptyState();
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+              itemCount: _sellers.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) => _sellerTile(context, index),
+            );
+          }),
+    );
   }
 
-  ListView mainListView(BuildContext context) {
-    return ListView.builder(
-        itemCount: _sellers.length,
-        itemBuilder: (BuildContext contex, int index) {
-          return Column(
-            children: [
-              Slidable(
-                // The end action pane is the one at the right or the bottom side.
-                startActionPane: ActionPane(
-                  motion: const ScrollMotion(),
-                  children: [
-                    SlidableAction(
-                      // An action can be bigger than the others.
-                      flex: 2,
-                      onPressed: (BuildContext d) {
-                        showDialogBar(context, index);
-                      },
-                      backgroundColor: const Color(0xFF7BC043),
-                      foregroundColor: Colors.white,
-                      icon: Icons.archive,
-                      label: 'Delete',
-                    ),
-                    SlidableAction(
-                      onPressed: (BuildContext c) {
-                         showUserInfo(context, index);
-                      },
-                      flex: 2,
-                      backgroundColor: const Color(0xFF0392CF),
-                      foregroundColor: Colors.white,
-                      icon: Icons.view_agenda,
-                      label: 'View',
-                    ),
-                  ],
+  Widget _emptyState() {
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.people_outline_rounded, size: 64, color: Colors.grey.shade300),
+        const SizedBox(height: 12),
+        Text("No sellers yet",
+            style: GoogleFonts.poppins(
+                color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        Text("Tap + to add a seller",
+            style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 13)),
+      ]),
+    );
+  }
+
+  Widget _sellerTile(BuildContext context, int index) {
+    final seller = _sellers.elementAt(index);
+    final initials = (seller.sellerName as String)
+        .trim()
+        .split(' ')
+        .take(2)
+        .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
+        .join();
+
+    return Slidable(
+      startActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        extentRatio: 0.55,
+        children: [
+          SlidableAction(
+            flex: 1,
+            onPressed: (_) => _confirmDelete(context, index),
+            backgroundColor: Colors.red.shade400,
+            foregroundColor: Colors.white,
+            icon: Icons.delete_rounded,
+            label: 'Delete',
+            borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+          ),
+          SlidableAction(
+            flex: 1,
+            onPressed: (_) => _showInfo(context, index),
+            backgroundColor: AppTheme.primary,
+            foregroundColor: Colors.white,
+            icon: Icons.info_rounded,
+            label: 'Details',
+            borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
+          ),
+        ],
+      ),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => SellerMoreInfo(sellerModel: seller))),
+          leading: CircleAvatar(
+            backgroundColor: AppTheme.primary.withValues(alpha: 0.12),
+            child: Text(initials,
+                style: GoogleFonts.poppins(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14)),
+          ),
+          title: Text(seller.sellerName.toString(),
+              style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600, fontSize: 14)),
+          subtitle: Text(
+            seller.sellerAddress?.toString().isNotEmpty == true
+                ? seller.sellerAddress.toString()
+                : "No address",
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[500]),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, int index) {
+    final seller = _sellers.elementAt(index);
+    return showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              title: const Text("Delete Seller"),
+              content: Text(
+                  "Remove ${seller.sellerName}? This cannot be undone."),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
                 ),
-                child: ListTile(
-                  onTap: () {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => SellerMoreInfo(
-                                sellerModel: _sellers.elementAt(index))));
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red),
+                  onPressed: () {
+                    sellersDb.deleteAt(index);
+                    Navigator.pop(context);
                   },
-                  leading: const Icon(Icons.person),
-                  title: Text(_sellers.elementAt(index).sellerName.toString()),
-                  subtitle: Text((_sellers
-                          .elementAt(index)
-                          .sellerAddress
-                          .toString()
-                          .isNotEmpty)
-                      ? _sellers.elementAt(index).sellerAddress.toString()
-                      : "Address: NaN"),
+                  child: const Text("Delete"),
                 ),
-              ),
-              const Divider()
-            ],
-          );
-        });
+              ],
+            ));
   }
 
-  Future<dynamic> showDialogBar(BuildContext context, int index) {
+  Future<void> _showInfo(BuildContext context, int index) {
+    final seller = _sellers.elementAt(index);
+    final createdAt = DateTime.fromMillisecondsSinceEpoch(
+        int.parse(seller.createdAtEpoch.toString()));
     return showDialog(
         context: context,
-        builder: (BuildContext c) {
-          return AlertDialog(
-            title: Text(
-                "Are you sure you want to delete ${_sellers.elementAt(index).sellerName} record?"),
-            actions: [
-              MaterialButton(
-                child: const Text("Cancil", style: TextStyle()),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-              MaterialButton(
-                color: Colors.red,
-                child:
-                    const Text("Delete", style: TextStyle(color: Colors.white)),
-                onPressed: () {
-                  sellersDb.deleteAt(index);
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          );
-        });
-  }
-
-
-   Future<dynamic> showUserInfo(BuildContext context, int index) {
-    return showDialog(
-        context: context,
-        builder: (BuildContext c) {
-          return AlertDialog(
-            title: Text(
-                "${_sellers.elementAt(index).sellerName} record"),
-            content: SizedBox(
-              height: 200,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
+        builder: (_) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+              title: Text(seller.sellerName.toString()),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Seller Name: ${_sellers.elementAt(index).sellerName}"),
-                  Text("Seller Address: ${_sellers.elementAt(index).sellerAddress}"),
-                  Text("Seller Contact Details: ${_sellers.elementAt(index).sellerContactDetails}"),
-                  Text("Regestered at: ${DateTime.fromMillisecondsSinceEpoch(int.parse(_sellers.elementAt(index).createdAtEpoch.toString()))}"),
-                ]
-                ),
-            ),
-            actions: [
-              MaterialButton(
-                child: const Text("Cancil", style: TextStyle()),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
+                  _infoRow(Icons.location_on_rounded, seller.sellerAddress ?? "—"),
+                  const SizedBox(height: 6),
+                  _infoRow(Icons.phone_rounded,
+                      seller.sellerContactDetails ?? "—"),
+                  const SizedBox(height: 6),
+                  _infoRow(Icons.calendar_today_rounded,
+                      "${createdAt.day}/${createdAt.month}/${createdAt.year}"),
+                ],
               ),
-            ],
-          );
-        });
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Close"),
+                ),
+              ],
+            ));
+  }
+
+  Widget _infoRow(IconData icon, String text) {
+    return Row(children: [
+      Icon(icon, size: 16, color: AppTheme.primary),
+      const SizedBox(width: 8),
+      Expanded(
+          child: Text(text,
+              style: GoogleFonts.poppins(fontSize: 13))),
+    ]);
   }
 }
